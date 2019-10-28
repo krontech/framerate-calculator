@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>Framerate Calculator</title>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				"use strict";
+				var res = document.querySelector('#res')
+				var out = document.querySelector('#out')
+				refresh()
+				res.addEventListener("change", refresh)
+				function refresh() { out.textContent = res.value }
+			})
+		</script>
+	</head>
+	<body style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+		<div>
+			<label for="res">Choose resolution:</label>
+			<select id="res">
+				<option value="1,057">1280×1024</option>
+				<option value="1,502">1280×720</option>
+				<option value="2,111">1280×512</option>
+				<option value="2,999">1280×360</option>
+				<option value="4,489">1280×240</option>
+				<option value="8,923">1280×120</option>
+				<option value="11,119">1280×96</option>
+				<option value="1,771">1024×768</option>
+				<option value="2,359">1024×576</option>
+				<option value="2,873">800×600</option>
+				<option value="3,587">800×480</option>
+				<option value="4,436">640×480</option>
+				<option value="5,903">640×360</option>
+				<option value="8,816">640×240</option>
+				<option value="17,424">640×120</option>
+				<option value="21,649">640×96</option>
+				<option value="15,200">336×252</option>
+				<option value="20,020">336×190</option>
+				<option value="31,192">336×120</option>
+				<option value="38,565">336×96</option>
+			</select>
+			<div>Framerate: <span id="out">1,057</span>fps</div>
+		</div>
+	</body>
+</html>
+
