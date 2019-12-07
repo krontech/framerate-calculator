@@ -3,43 +3,570 @@
 	<head>
 		<meta charset="utf-8">
 		<title>Framerate Calculator</title>
+		
+		<style>
+			/* Group selectors as closely as possible, and put cosmetic
+				CSS rules after structural CSS rules. */
+			body {
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+				margin: 0 5vw;
+			}
+			
+			label {
+				/* Put labels for "Select Product" inputs over top of them. */
+				display: inline-flex;
+				flex-direction: column;
+				align-items: flex-start;
+				
+				color: #333;
+			}
+			
+			#product label:first-child {
+				/* Gap between "Camera Model" and "Memory". */
+				margin-right: 2em;
+			}
+			
+			form label {
+				margin-top: 1ex;
+			}
+			
+			form {
+				display: inline-flex;
+				flex-direction: column;
+				align-items: flex-start;
+			}
+			
+			select {
+				margin: .5ex 0;
+				padding: .5ex .75ex;
+			}
+			
+			label input {
+				width: 12ex;
+			}
+			
+			.fps input, .duration input {
+				width: 10ex;
+			}
+			
+			.resolution input {
+				width: 7ex;
+			}
+			
+			.range-input {
+				display: grid;
+				grid-template-columns: auto min-content;
+				grid-template-rows: min-content auto min-content;
+				grid-template-areas:
+					"input input unit"
+					"min   max   .";
+			}
+			
+			.range-input div {
+				grid-area: input;
+			}
+			
+			input-max {
+				text-align: right;
+			}
+			
+			input-max, input-min {
+				font-size: 80%;
+				color: #333;
+			}
+			
+			input-min:not(:empty)::after, input-max:not(:empty)::before {
+				content: "..";
+			}
+			
+			input-unit:not(:empty)::before {
+				content: "\00a0";
+			}
+			
+			
+			#calculators {
+				display: grid;
+				grid-auto-flow: row;
+			}
+			
+			
+			#calculate-header {
+				margin-bottom: 0;
+			}
+			
+			h3 {
+				margin-top: 2em;
+				margin-bottom: 0.4em;
+			}
+			
+			h4 {
+				margin-bottom: 0.2em;
+			}
+			
+			td:first-child:not(:empty)::after {
+				content: ":";
+			}
+			
+			
+			@media only screen and (min-width: 720px) {
+				#calculators {
+					display: grid;
+					grid-auto-flow: column;
+					grid-template-rows: auto auto;
+					grid-template-columns: repeat(3, 1fr);
+					grid-gap: 0 5vw;
+				}
+				
+				form {
+					grid-row: 1;
+				}
+				
+				output {
+					grid-row: 2;
+				}
+				
+				h3 {
+					margin-top: 0.5em;
+				}
+			}
+		</style>
+		
 		<script>
 			document.addEventListener("DOMContentLoaded", function() {
 				"use strict";
-				var res = document.querySelector('#res')
-				var out = document.querySelector('#out')
-				refresh()
-				res.addEventListener("change", refresh)
-				function refresh() { out.textContent = res.value }
+				
+				const products = {
+					"Chronos 1.4": {
+						memory: {
+							8:  { bytes: Math.pow(2, 33) },
+							16: { bytes: Math.pow(2, 34) },
+							32: { bytes: Math.pow(2, 35) },
+						},
+						hResPresets: [1280, 1024, 800, 640, 336], //Used for generating the maximum resolutions table.
+						
+						minHBlank: 0x02, //LUX1310_MIN_HBLANK
+						sofDelay: 0x0f, //LUX1310_SOF_DELAY
+						lvDelay: 0x07, //LUX1310_LV_DELAY
+						wavetable: [ //from lux1310wt.cpp
+							{ clocks: 80 },
+							{ clocks: 79 },
+							{ clocks: 62 },
+							{ clocks: 42 },
+							{ clocks: 39 },
+							{ clocks: 30 },
+							{ clocks: 25 },
+							{ clocks: 20 },
+							{ clocks: 19 },
+						],
+						
+						//cam-json --control get - <<< '["sensorPixelRate", "sensorVMax", "sensorVMin", "sensorVIncrement", "sensorHMax", "sensorHMin", "sensorHIncrement"]'
+						sensorHIncrement: 16,
+						sensorHMax: 1280,
+						sensorHMin: 192,
+						sensorPixelRate: 1.40198e+09,
+						sensorVIncrement: 2,
+						sensorVMax: 1024,
+						sensorVMin: 96,
+					},
+					"Chronos 2.1": {
+						memory: {
+							8:  { bytes: Math.pow(2, 33) },
+							16: { bytes: Math.pow(2, 34) },
+							32: { bytes: Math.pow(2, 35) },
+						},
+						hResPresets: [1920, 1280, 1024, 800, 640, 336], //Used for generating the maximum resolutions table.
+						
+						minHBlank: 2, //LUX2100_MIN_HBLANK
+						sofDelay: 10, //LUX2100_SOF_DELAY
+						lvDelay: 8, //LUX2100_LV_DELAY
+						wavetable: [ //from lux2100wt.cpp
+							{ clocks: 66 },
+							{ clocks: 45 },
+							{ clocks: 35 },
+							{ clocks: 25 },
+						],
+						
+						//cam-json --control get - <<< '["sensorPixelRate", "sensorVMax", "sensorVMin", "sensorVIncrement", "sensorHMax", "sensorHMin", "sensorHIncrement"]'
+						sensorHIncrement: 32,
+						sensorHMax: 1920,
+						sensorHMin: 640,
+						sensorPixelRate: 2.07392e+09,
+						sensorVIncrement: 2,
+						sensorVMax: 1080,
+						sensorVMin: 480,
+					},
+				}
+				
+				
+				Array.prototype.forEach.call(
+					document.querySelectorAll('#product select'),
+					select => select.addEventListener('input', recalculateEverything),
+				)
+				recalculateEverything()
+				
+				Array.prototype.forEach.call(
+					document.querySelectorAll('#record-time input'),
+					input => input.addEventListener('input', recalculateRecordTime),
+				)
+				
+				Array.prototype.forEach.call(
+					document.querySelectorAll('#framerate input'),
+					input => input.addEventListener('input', recalculateFramerate),
+				)
+				
+				Array.prototype.forEach.call(
+					document.querySelectorAll('#resolution input'),
+					input => input.addEventListener('input', recalculateResolution),
+				)
+				
+				
+				function recalculateEverything() {
+					recalculateInputLimits();
+					
+					recalculateRecordTime();
+					recalculateFramerate();
+					recalculateResolution();
+				}
+				
+				function recalculateInputLimits() {
+					const data = products[document.querySelector('#product .model').value]
+					
+					//Recalculate resolution limits.
+					Array.prototype.forEach.call(
+						document.querySelectorAll('.resolution'),
+						resolution => {
+							const inputs = resolution.querySelectorAll('input')
+							inputs[0].min         = data.sensorHMin
+							inputs[0].max         = data.sensorHMax
+							inputs[0].placeholder = data.sensorHMax
+							inputs[0].step        = data.sensorHIncrement
+							inputs[1].min         = data.sensorVMin
+							inputs[1].max         = data.sensorVMax
+							inputs[1].placeholder = data.sensorVMax
+							inputs[1].step        = data.sensorVIncrement
+						}
+					)
+					
+					//Only recalculate resolution framerate, record time framerate depends on record time resolution.
+					const rFramerate = document.querySelector('#resolution .framerate input')
+					const rMaxFps = Math.floor(maxFpsForResolution(data.sensorHMax, data.sensorVMax))
+					rFramerate.max = rMaxFps
+					rFramerate.placeholder = rMaxFps
+					document.querySelector('#resolution .framerate input-max')
+						.textContent = rMaxFps
+					
+					const rRecordTime = minRecordTime(data.sensorHMax, data.sensorVMax)
+					document.querySelector('#resolution .duration input').placeholder = 
+						formatSeconds(rRecordTime)
+				}
+				
+				function recalculateRecordTime() {
+					const data = products[document.querySelector('#product .model').value]
+					const memory = data.memory[document.querySelector('#product .memory').value]
+					
+					const rtFramerate = document.querySelector('#record-time .framerate input')
+					const rtResolution = document.querySelectorAll('#record-time .resolution input')
+					const rtMaxFps = Math.floor(maxFpsForResolution(
+						parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10),
+						parseInt(rtResolution[1].value || rtResolution[1].placeholder, 10),
+					))
+					rtFramerate.max = rtMaxFps
+					rtFramerate.placeholder = rtMaxFps
+					document.querySelector('#record-time .framerate input-max')
+						.textContent = rtMaxFps
+					
+					const rtBaseTime = minRecordTime(
+						parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10),
+						parseInt(rtResolution[1].value || rtResolution[1].placeholder, 10),
+					)
+					const rtFinalTime = rtBaseTime * rtMaxFps / parseInt(rtFramerate.value || rtFramerate.placeholder)
+					document.getElementById('rtRecordingBuffer').textContent =
+						formatSeconds(rtFinalTime)
+					
+					const rtRealFps = 30 //or 60, or 29.97…
+					const rtRealTime = rtBaseTime * rtMaxFps / rtRealFps
+					document.getElementById('rtPlaybackDuration').textContent =
+						formatSeconds(rtRealTime) + ' @ ' + rtRealFps + 'fps'
+					
+					document.getElementById('rtFramesRecorded').textContent =
+						Math.floor(rtRealTime * rtRealFps) //Pad with nbsp to align better with units above.
+				}
+				
+				function recalculateFramerate() {
+					const data = products[document.querySelector('#product .model').value]
+					
+					const fResolution = document.querySelectorAll('#framerate .resolution input')
+					const fRecordTime = document.querySelector('#framerate .duration input')
+					
+					const fBaseTime = minRecordTime(
+						parseInt(fResolution[0].value || fResolution[0].placeholder, 10),
+						parseInt(fResolution[1].value || fResolution[1].placeholder, 10),
+					)
+					const fMaxFps = Math.floor(maxFpsForResolution(
+						parseInt(fResolution[0].value || fResolution[0].placeholder, 10),
+						parseInt(fResolution[1].value || fResolution[1].placeholder, 10),
+					))
+					
+					fRecordTime.placeholder = formatSeconds(fBaseTime)
+					
+					const fTotalSeconds = secondsFromTimeString(fRecordTime.value)
+					const totalFramesWanted = fMaxFps * fTotalSeconds
+					const totalFramesAvailable = fMaxFps * fBaseTime
+					const ratio = totalFramesAvailable / totalFramesWanted
+					
+					document.getElementById('fFramerate').textContent =
+						Math.round(Math.min(fMaxFps, fMaxFps * ratio)*100)/100
+				}
+				
+				function recalculateResolution() {
+					//Calculate resolutions at which the internal buffer (Memory)
+					//lasts as long as Record Time, when recording at Framerate.
+					
+					const bpsAccuracy = 1e3 //Usually *quite* large, but about 1e6 for the smallest resolution.
+					const maxIterations = 25 //We will hit max if there is no solution.
+					
+					const data = products[document.querySelector('#product .model').value]
+					const memory = data.memory[document.querySelector('#product .memory').value]
+					
+					const naturalRecordTime = minRecordTime(data.sensorHMax, data.sensorVMax)
+					
+					const targetFramerateInput = 
+						document.querySelector('#resolution .framerate input')
+					const targetFps = parseInt(targetFramerateInput.value, 10)
+						|| maxFpsForResolution(data.sensorHMax, data.sensorVMax)
+					
+					const targetDurationInput = 
+						document.querySelector('#resolution .duration input')
+					const targetDuration = secondsFromTimeString(targetDurationInput.value)
+						|| naturalRecordTime
+					
+					const targetBps = memory.bytes / targetDuration
+					
+					const fittingResolutions = []
+					for (var hResIndex=0; hResIndex < data.hResPresets.length; hResIndex++) {
+						const hRes = data.hResPresets[hResIndex]
+						
+						//Perform binary search for right recording height for our width.
+						let min = data.sensorVMin
+						let middle = (data.sensorVMax+data.sensorVMin)/2
+						let max = data.sensorVMax
+						let deltaBps = targetBps - bytesPerSecond(hRes, middle, targetFps)
+						let iteration = 0 //Stop eventually if the solution lies outside the range.
+						while (Math.abs(deltaBps) > bpsAccuracy && iteration++ < maxIterations) {
+							deltaBps > 0 ? min = middle : max = middle //Move an extreme to middle to perform binary search.
+							middle = (max+min)/2
+							deltaBps = targetBps - bytesPerSecond(hRes, middle, targetFps)
+						}
+						
+						//Only push solution if it's accurate.
+						if (Math.abs(deltaBps) < bpsAccuracy) {
+							fittingResolutions.push([hRes, Math.round(middle)])
+						}
+						//If the solution for this resolution is at it's limit, bail as all others will be too since vRes grows as we shrink hRes.
+						if (max == data.sensorVMax) {
+							break
+						}
+					}
+					
+					const target = document.querySelector('output[form="resolution"] tbody')
+					target.innerHTML = '';
+					fittingResolutions.map(match => {
+						const tr = document.createElement('tr')
+						tr.appendChild(document.createElement('td')) //header cell
+						const dataCell = document.createElement('td')
+						dataCell.textContent = match[0] + '×' + match[1]
+						tr.appendChild(dataCell)
+						return tr
+					}).forEach(tr => target.appendChild(tr))
+					const labelCell = target.querySelector('td')
+					labelCell && (labelCell.textContent = "Resolution")
+				}
+				
+				
+				
+				function maxFpsForResolution(hRes, vRes, data) { //data is optional
+					data = data || products[document.querySelector('#product .model').value]
+					return 1e8 / getMinFramePeriod(hRes, vRes, data)
+				}
+				
+				//Transliterated from src/lux1310.cpp
+				function getMinFramePeriod(hRes, vRes, data) {
+					const wtIdeal = (hRes / data.sensorHIncrement) + data.minHBlank - 3
+					
+					//Select the longest wavetable that fits within the line readout time, or fall back to the shortest wavetable for extremely small resolutions.
+					for (var i = 0; data.wavetable[i]; i++) {
+						if (data.wavetable[i].clocks <= wtIdeal) {
+							return getMinWavetablePeriod(hRes, vRes, data, data.wavetable[i].clocks);
+						}
+					}
+					return getMinWavetablePeriod(hRes, vRes, data, 
+						data.wavetable[data.wavetable.length()-1] );
+				}
+				
+				//Transliterated from src/lux1310.cpp
+				function getMinWavetablePeriod(hRes, vRes, data, wtSize) {
+					const sensorVDark = 0 //Always 0, we don't usually use vDarkRows.
+					const tRead = hRes / data.sensorHIncrement;
+					const tTx = 25; /* Hard-coded to 25 clocks in the FPGA, should actually be at least 350ns. */
+					const tRow = Math.max(tRead + data.minHBlank, wtSize + 3);
+					const tFovf = data.sofDelay + wtSize + data.lvDelay + 10;
+					const tFovfb = 41; /* Duration between PRSTN falling and TXN falling (I think) */
+					const tFrame = tRow * (vRes + sensorVDark) + tTx + tFovf + tFovfb - data.minHBlank;
+					
+					return Math.ceil(tFrame * 100 / 90);
+				}
+				
+				function maxBytesPerSecond(hRes, vRes, data) {
+					data = data || products[document.querySelector('#product .model').value]
+					return bytesPerSecond(hRes, vRes, maxFpsForResolution(hRes, vRes, data))
+				}
+				
+				function bytesPerSecond(hRes, vRes, fps) {
+					const maxPps = Math.floor(hRes * vRes * fps / 32) * 32 //pixels per second
+					return maxPps * 12/8 //bytes per second
+				}
+				
+				function minRecordTime(hRes, vRes, data) { //in seconds
+					data = data || products[document.querySelector('#product .model').value]
+					const memory = data.memory[document.querySelector('#product .memory').value]
+					const maxBps = maxBytesPerSecond(hRes, vRes, data)
+					
+					return memory.bytes / maxBps
+				}
+				
+				
+				function formatSeconds(seconds) {
+					return seconds < 120
+						? Math.round(seconds%60*100)/100+'s'
+						: Math.floor(seconds/60)+'m' + Math.round(seconds%60)+'s'
+				}
+				
+				function secondsFromTimeString(input) {
+					return parseFloat((/([\d\.]+)m/.exec(input) || [,'0'])[1]) * 60 +
+						parseFloat((/([\d\.]+)(?:s|$)/.exec(input) || [,'0'])[1])
+				}
 			})
 		</script>
 	</head>
-	<body style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
-		<div>
-			<label for="res">Choose resolution:</label>
-			<select id="res">
-				<option value="1,057">1280×1024</option>
-				<option value="1,502">1280×720</option>
-				<option value="2,111">1280×512</option>
-				<option value="2,999">1280×360</option>
-				<option value="4,489">1280×240</option>
-				<option value="8,923">1280×120</option>
-				<option value="11,119">1280×96</option>
-				<option value="1,771">1024×768</option>
-				<option value="2,359">1024×576</option>
-				<option value="2,873">800×600</option>
-				<option value="3,587">800×480</option>
-				<option value="4,436">640×480</option>
-				<option value="5,903">640×360</option>
-				<option value="8,816">640×240</option>
-				<option value="17,424">640×120</option>
-				<option value="21,649">640×96</option>
-				<option value="15,200">336×252</option>
-				<option value="20,020">336×190</option>
-				<option value="31,192">336×120</option>
-				<option value="38,565">336×96</option>
-			</select>
-			<div>Framerate: <span id="out">1,057</span>fps</div>
+	<body>
+		<div id=framerate-calculator>
+			<h2>Select Product</h2>
+			
+			<div id="product">
+				<label>
+					Camera Model
+					<select class=model>
+						<option value="Chronos 1.4">Chronos 1.4</option>
+						<option value="Chronos 2.1">Chronos 2.1</option>
+					</select>
+				</label>
+				<label>
+					Memory
+					<select class=memory>
+						<option value=8>8gb</option>
+						<option value=16>16gb</option>
+						<option value=32 selected>32gb</option>
+					</select>
+				</label>
+			</div>
+			
+			<br><br>
+			
+			<h2 id=calculate-header>Calculate</h2>
+			
+			<div id="calculators">
+				<form id=record-time>
+					<h3>Maximum Record Time</h3>
+					<label class=resolution>
+						Resolution
+						<div>
+							<input type=number> × <input type=number> px
+						</div>
+					</label>
+					<label class=framerate>
+						Framerate
+						<div class=range-input>
+							<!-- Wrap input in pointless div to work around grid layout bug in Firefox. -->
+							<div><input type=number min=60></div>
+							<input-unit>fps</input-unit>
+							<input-min>60</input-min>
+							<input-max></input-max>
+						</div>
+					</label>
+				</form>
+				<output form=record-time>
+					<h4>Yield</h4>
+					<table>
+						<tbody>
+							<tr><td>Recording Buffer</td><td id=rtRecordingBuffer></td></tr>
+							<tr><td>Playback Duration</td><td id=rtPlaybackDuration></td></tr>
+							<tr><td>Frames Recorded</td><td id=rtFramesRecorded></td></tr>
+						</tbody>
+					</table>
+				</output>
+				
+				
+				<form id=framerate>
+					<h3>Maximum Framerate</h3>
+					<label class=resolution>
+						Resolution
+						<div>
+							<input type=number> × <input type=number> px
+						</div>
+					</label>
+					<label class=duration>
+						Record Time
+						<div class=range-input>
+							<!-- Wrap input in pointless div to work around grid layout bug in Firefox. -->
+							<div><input type=text pattern="(?:^\.\d+[sm]?$)|(?:^\d+\.?\d*?[sm]?$)"></div>
+							<input-unit></input-unit>
+							<input-min>2.5s</input-min>
+							<input-max>10m</input-max>
+						</div>
+					</label>
+				</form>
+				<output form=framerate>
+					<h4>Yield</h4>
+					<table>
+						<tbody>
+							<tr><td>Framerate</td><td id=fFramerate></td></tr>
+						</tbody>
+					</table>
+				</output>
+				
+				
+				<form id=resolution>
+					<h3>Maximum Resolution</h3>
+					<label class=framerate>
+						Framerate
+						<div class=range-input>
+							<!-- Wrap input in pointless div to work around grid layout bug in Firefox. -->
+							<div><input type=number min=60></div>
+							<input-unit>fps</input-unit>
+							<input-min>60</input-min>
+							<input-max></input-max>
+						</div>
+					</label>
+					<label class=duration>
+						Record Time
+						<div class=range-input>
+							<!-- Wrap input in pointless div to work around grid layout bug in Firefox. -->
+							<div><input type=text pattern="(?:^\.\d+[sm]?$)|(?:^\d+\.?\d*?[sm]?$)"></div>
+							<input-unit></input-unit>
+							<input-min>2.5s</input-min>
+							<input-max>10m</input-max>
+						</div>
+					</label>
+				</form>
+				<output form=resolution>
+					<h4>Yield</h4>
+					<table><tbody></tbody></table>
+				</output>
+			</div>
+			
 		</div>
 	</body>
 </html>
