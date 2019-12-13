@@ -267,21 +267,18 @@
 					const data = products[document.querySelector('#product .model').value]
 					const memory = data.memory[document.querySelector('#product .memory').value]
 					
-					const rtFramerate = document.querySelector('#record-time .framerate input')
 					const rtResolution = document.querySelectorAll('#record-time .resolution input')
-					const rtMaxFps = Math.floor(maxFpsForResolution(
-						parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10),
-						parseInt(rtResolution[1].value || rtResolution[1].placeholder, 10),
-					))
+					const hRes = parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10)
+					const vRes = parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10)
+					
+					const rtFramerate = document.querySelector('#record-time .framerate input')
+					const rtMaxFps = Math.floor(maxFpsForResolution(hRes, vRes))
 					rtFramerate.max = rtMaxFps
 					rtFramerate.placeholder = rtMaxFps
 					document.querySelector('#record-time .framerate input-max')
 						.textContent = rtMaxFps
 					
-					const rtBaseTime = minRecordTime(
-						parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10),
-						parseInt(rtResolution[1].value || rtResolution[1].placeholder, 10),
-					)
+					const rtBaseTime = minRecordTime(hRes, vRes)
 					const rtFinalTime = rtBaseTime * rtMaxFps / parseInt(rtFramerate.value || rtFramerate.placeholder)
 					document.getElementById('rtRecordingBuffer').textContent =
 						formatSeconds(rtFinalTime)
@@ -292,7 +289,7 @@
 						formatSeconds(rtRealTime) + ' @ ' + rtRealFps + 'fps'
 					
 					document.getElementById('rtFramesRecorded').textContent =
-						Math.floor(rtRealTime * rtRealFps) //Pad with nbsp to align better with units above.
+						getRecordingMaxFrames(hRes, vRes)
 				}
 				
 				function recalculateFramerate() {
@@ -425,8 +422,14 @@
 				}
 				
 				function bytesPerSecond(hRes, vRes, fps) {
+					const BIT_DEPTH = 12
 					const maxPps = Math.floor(hRes * vRes * fps / 32) * 32 //pixels per second
-					return maxPps * 12/8 //bytes per second
+					return maxPps * BIT_DEPTH/8
+				}
+				
+				function bytesPerFrame(hRes, vRes) {
+					const BIT_DEPTH = 12
+					return hRes * vRes * BIT_DEPTH/8
 				}
 				
 				function minRecordTime(hRes, vRes, data) { //in seconds
@@ -447,6 +450,29 @@
 				function secondsFromTimeString(input) {
 					return parseFloat((/([\d\.]+)m/.exec(input) || [,'0'])[1]) * 60 +
 						parseFloat((/([\d\.]+)(?:s|$)/.exec(input) || [,'0'])[1])
+				}
+				
+				//Return the length of memory (in frames) minus calibration overhead. Directly ported from PyChronos' camera.py.
+				function getRecordingMaxFrames(hRes, vRes) {
+					const data = products[document.querySelector('#product .model').value]
+					const memory = data.memory[document.querySelector('#product .memory').value]
+					
+					const BYTES_PER_WORD = 32
+				    const FRAME_ALIGN_WORDS = 64
+					
+					const MAX_FRAME_WORDS = 0x10000
+					const CAL_REGION_START = 0
+					const CAL_REGION_FRAMES = 3
+					const LIVE_REGION_START = CAL_REGION_START + MAX_FRAME_WORDS * CAL_REGION_FRAMES
+					const LIVE_REGION_FRAMES = 3
+					const REC_REGION_START = LIVE_REGION_START + MAX_FRAME_WORDS * LIVE_REGION_FRAMES
+					
+					const ramSizeWords = bytesPerFrame(hRes, vRes) / BYTES_PER_WORD - REC_REGION_START
+					let fSizeWords = (bytesPerFrame(hRes, vRes) + BYTES_PER_WORD - 1) / BYTES_PER_WORD
+					fSizeWords /= FRAME_ALIGN_WORDS
+					fSizeWords = Math.floor(fSizeWords)
+					fSizeWords *= FRAME_ALIGN_WORDS
+					return ramSizeWords // fSizeWords
 				}
 			})
 		</script>
