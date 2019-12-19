@@ -269,7 +269,7 @@
 					
 					const rtResolution = document.querySelectorAll('#record-time .resolution input')
 					const hRes = parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10)
-					const vRes = parseInt(rtResolution[0].value || rtResolution[0].placeholder, 10)
+					const vRes = parseInt(rtResolution[1].value || rtResolution[1].placeholder, 10)
 					
 					const rtFramerate = document.querySelector('#record-time .framerate input')
 					const rtMaxFps = Math.floor(maxFpsForResolution(hRes, vRes))
@@ -384,9 +384,29 @@
 				
 				
 				
+				function sensorPixels(hRes, vRes, data) { //Translated from pychronos/sensors/api.py:pixels()
+					return hRes * vRes //ignore data.sensorVDark, we don't calculate it
+				}
+				
+				function sensorSize(hRes, vRes, data) { //Translated from pychronos/sensors/api.py:size()
+					const BIT_DEPTH = 12
+					return Math.floor(sensorPixels(hRes, vRes, data) * BIT_DEPTH / 8)
+				}
+				
 				function maxFpsForResolution(hRes, vRes, data) { //data is optional
 					data = data || products[document.querySelector('#product .model').value]
 					return 1e8 / getMinFramePeriod(hRes, vRes, data)
+				}
+				
+				function getFrameSizeWords(hRes, vRes, data) {
+					const BYTES_PER_WORD = 32
+					const FRAME_ALIGN_WORDS = 64
+					
+					let fSizeWords = Math.floor((sensorSize(hRes, vRes, data) + BYTES_PER_WORD - 1) / BYTES_PER_WORD)
+					fSizeWords += FRAME_ALIGN_WORDS - 1
+					fSizeWords = Math.floor(fSizeWords / FRAME_ALIGN_WORDS)
+					fSizeWords *= FRAME_ALIGN_WORDS
+					return fSizeWords
 				}
 				
 				//Transliterated from src/lux1310.cpp
@@ -459,24 +479,24 @@
 					
 					const BYTES_PER_WORD = 32
 				    const FRAME_ALIGN_WORDS = 64
+				    const BIT_DEPTH = 12
 					
-					const MAX_FRAME_WORDS = 0x10000
+					const MAX_FRAME_WORDS = getFrameSizeWords(data.sensorHMax, data.sensorVMax, data)
 					const CAL_REGION_START = 0
 					const CAL_REGION_FRAMES = 3
 					const LIVE_REGION_START = CAL_REGION_START + MAX_FRAME_WORDS * CAL_REGION_FRAMES
 					const LIVE_REGION_FRAMES = 3
 					const REC_REGION_START = LIVE_REGION_START + MAX_FRAME_WORDS * LIVE_REGION_FRAMES
 					
-					const ramSizeWords = bytesPerFrame(hRes, vRes) / BYTES_PER_WORD - REC_REGION_START
-					let fSizeWords = (bytesPerFrame(hRes, vRes) + BYTES_PER_WORD - 1) / BYTES_PER_WORD
-					fSizeWords /= FRAME_ALIGN_WORDS
-					fSizeWords = Math.floor(fSizeWords)
-					fSizeWords *= FRAME_ALIGN_WORDS
-					return ramSizeWords // fSizeWords
+					const ramSizeWords = Math.floor(memory.bytes / BYTES_PER_WORD) - REC_REGION_START
+					console.warn('ramSizeWords is ', ramSizeWords)
+					console.warn('frameSizeWords is ', getFrameSizeWords(hRes, vRes, data))
+					return Math.floor(ramSizeWords / getFrameSizeWords(hRes, vRes, data))
 				}
 			})
 		</script>
 	</head>
+	
 	<body>
 		<div id=framerate-calculator>
 			<h2>Select Product</h2>
